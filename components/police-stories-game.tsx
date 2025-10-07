@@ -5,6 +5,14 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useAudioManager } from "@/hooks/useAudioManager"
 
+// Define enemy states
+enum EnemyState {
+  PATROL = 'patrol',
+  DEFEND = 'defend',
+  ATTACK = 'attack',
+  SUSPICIOUS = 'suspicious',
+}
+
 interface Position {
   x: number
   y: number
@@ -26,6 +34,9 @@ interface Enemy {
   angle: number
   lastShot: number
   alertLevel: number
+  state: EnemyState
+  stateTimer: number
+  patrolPoint: Position | null
 }
 
 interface Bullet {
@@ -113,6 +124,10 @@ export default function PoliceStoriesGame() {
         checkWallCollision({ x, y }, ENEMY_SIZE)
       )
 
+      // Random patrol point for enemies
+      const patrolX = Math.random() * 700 + 50
+      const patrolY = Math.random() * 500 + 50
+
       enemiesRef.current.push({
         x,
         y,
@@ -120,6 +135,9 @@ export default function PoliceStoriesGame() {
         angle: 0,
         lastShot: 0,
         alertLevel: 0,
+        state: EnemyState.PATROL,
+        stateTimer: 0,
+        patrolPoint: { x: patrolX, y: patrolY }
       })
     }
 
@@ -275,37 +293,152 @@ export default function PoliceStoriesGame() {
       for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i]
 
+        // Update state timer
+        enemy.stateTimer += 1/60 // Assuming ~60fps
+
         // Check line of sight to player
         const hasLineOfSight = !lineIntersectsWall(enemy.x, enemy.y, player.x, player.y)
-
         const distToPlayer = Math.hypot(player.x - enemy.x, player.y - enemy.y)
 
+        // Update alert level based on different states
+        let newAlertLevel = enemy.alertLevel
         if (hasLineOfSight && distToPlayer < 300) {
-          enemy.alertLevel = Math.min(100, enemy.alertLevel + 2)
-        } else {
-          enemy.alertLevel = Math.max(0, enemy.alertLevel - 1)
+          if (distToPlayer < 100) {
+            newAlertLevel = Math.min(100, enemy.alertLevel + 5) // Aggressive increase when very close
+          } else if (distToPlayer < 200) {
+            newAlertLevel = Math.min(100, enemy.alertLevel + 3) // Moderate increase when close
+          } else {
+            newAlertLevel = Math.min(100, enemy.alertLevel + 1) // Slow increase when far
+          }
+        } else if (distToPlayer > 350) {
+          newAlertLevel = Math.max(0, enemy.alertLevel - 1) // Slow decrease when far away
+        }
+        enemy.alertLevel = newAlertLevel
+
+        // Determine new state based on conditions
+        let newState = enemy.state
+        switch (enemy.state) {
+          case EnemyState.PATROL:
+            // If patrolling and see player or hear noise, go suspicious
+            if (enemy.alertLevel > 30) {
+              newState = EnemyState.SUSPICIOUS
+            } else {
+              // Continue patrolling
+              newState = EnemyState.PATROL
+            }
+            break
+          case EnemyState.SUSPICIOUS:
+            // If suspicious and see player clearly, go to attack/defend
+            if (enemy.alertLevel > 60) {
+              newState = distToPlayer < 200 ? EnemyState.ATTACK : EnemyState.DEFEND
+            } else if (enemy.alertLevel < 20) {
+              // If suspicion fades, return to patrol
+              newState = EnemyState.PATROL
+            } else {
+              // Stay suspicious
+              newState = EnemyState.SUSPICIOUS
+            }
+            break
+          case EnemyState.DEFEND:
+            // If very alert, go to attack
+            if (enemy.alertLevel > 80) {
+              newState = EnemyState.ATTACK
+            } else if (enemy.alertLevel < 40) {
+              // If alert level drops, go back to patrol
+              newState = EnemyState.PATROL
+            } else {
+              // Stay in defend if still alert but not aggressive
+              newState = EnemyState.DEFEND
+            }
+            break
+          case EnemyState.ATTACK:
+            // If player is far and alert level drops, go to defend
+            if (enemy.alertLevel < 50 && distToPlayer > 250) {
+              newState = EnemyState.DEFEND
+            } else if (enemy.alertLevel < 30 && distToPlayer > 300) {
+              // If player is far and not alert, go back to patrol
+              newState = EnemyState.PATROL
+            } else {
+              // Stay in attack if player is close and still alert
+              newState = EnemyState.ATTACK
+            }
+            break
         }
 
-        // Move towards player if alerted
-        if (enemy.alertLevel > 50 && distToPlayer > 150) {
-          const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x)
-          const newEnemyX = enemy.x + Math.cos(angle) * ENEMY_SPEED
-          const newEnemyY = enemy.y + Math.sin(angle) * ENEMY_SPEED
-
-          if (!checkWallCollision({ x: newEnemyX, y: enemy.y }, ENEMY_SIZE)) {
-            enemy.x = newEnemyX
-          }
-          if (!checkWallCollision({ x: enemy.x, y: newEnemyY }, ENEMY_SIZE)) {
-            enemy.y = newEnemyY
-          }
+        // Apply state transition with cooldown to prevent flickering
+        if (newState !== enemy.state && enemy.stateTimer > 0.5) {
+          enemy.state = newState
+          enemy.stateTimer = 0
         }
 
-        enemy.angle = Math.atan2(player.y - enemy.y, player.x - enemy.x)
+        // Execute behavior based on current state
+        switch (enemy.state) {
+          case EnemyState.PATROL:
+            // Move towards patrol point
+            if (enemy.patrolPoint) {
+              const distToPatrol = Math.hypot(enemy.patrolPoint.x - enemy.x, enemy.patrolPoint.y - enemy.y)
+              if (distToPatrol > 20) {
+                const angle = Math.atan2(enemy.patrolPoint.y - enemy.y, enemy.patrolPoint.x - enemy.x)
+                const newEnemyX = enemy.x + Math.cos(angle) * ENEMY_SPEED * 0.5 // Slower patrol speed
+                const newEnemyY = enemy.y + Math.sin(angle) * ENEMY_SPEED * 0.5
 
-        // Enemy shooting
-        if (enemy.alertLevel > 70 && hasLineOfSight && now - enemy.lastShot > 1500) {
-          shootBullet(false, enemy.x, enemy.y, enemy.angle)
-          enemy.lastShot = now
+                if (!checkWallCollision({ x: newEnemyX, y: enemy.y }, ENEMY_SIZE)) {
+                  enemy.x = newEnemyX
+                }
+                if (!checkWallCollision({ x: enemy.x, y: newEnemyY }, ENEMY_SIZE)) {
+                  enemy.y = newEnemyY
+                }
+              }
+            }
+            break
+          case EnemyState.SUSPICIOUS:
+            // Look around (slowly rotate)
+            enemy.angle += 0.02
+            // Slow movement towards where they think player is
+            if (hasLineOfSight) {
+              const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x)
+              const newEnemyX = enemy.x + Math.cos(angle) * ENEMY_SPEED * 0.3
+              const newEnemyY = enemy.y + Math.sin(angle) * ENEMY_SPEED * 0.3
+
+              if (!checkWallCollision({ x: newEnemyX, y: enemy.y }, ENEMY_SIZE)) {
+                enemy.x = newEnemyX
+              }
+              if (!checkWallCollision({ x: enemy.x, y: newEnemyY }, ENEMY_SIZE)) {
+                enemy.y = newEnemyY
+              }
+              enemy.angle = angle
+            }
+            break
+          case EnemyState.DEFEND:
+            // Hold position and watch for player
+            if (hasLineOfSight) {
+              enemy.angle = Math.atan2(player.y - enemy.y, player.x - enemy.x)
+            }
+            break
+          case EnemyState.ATTACK:
+            // Move aggressively towards player
+            if (distToPlayer > 100) { // Don't get too close
+              const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x)
+              const newEnemyX = enemy.x + Math.cos(angle) * ENEMY_SPEED
+              const newEnemyY = enemy.y + Math.sin(angle) * ENEMY_SPEED
+
+              if (!checkWallCollision({ x: newEnemyX, y: enemy.y }, ENEMY_SIZE)) {
+                enemy.x = newEnemyX
+              }
+              if (!checkWallCollision({ x: enemy.x, y: newEnemyY }, ENEMY_SIZE)) {
+                enemy.y = newEnemyY
+              }
+              enemy.angle = angle
+            }
+            break
+        }
+
+        // Enemy shooting - only in attack and defend states
+        if (enemy.state === EnemyState.ATTACK || enemy.state === EnemyState.DEFEND) {
+          if (hasLineOfSight && now - enemy.lastShot > 1500 && distToPlayer < 300) {
+            shootBullet(false, enemy.x, enemy.y, enemy.angle)
+            enemy.lastShot = now
+          }
         }
       }
 
@@ -398,16 +531,41 @@ export default function PoliceStoriesGame() {
         ctx.fill()
       })
 
-      // Draw enemies
+      // Draw enemies with color based on state
       enemies.forEach((enemy) => {
+        // Set color based on state
+        let enemyColor: string
+        let alertColor: string
+        switch (enemy.state) {
+          case EnemyState.PATROL:
+            enemyColor = "#7f1d1d"  // Dark red for patrol
+            alertColor = "rgba(127, 29, 29, 0.3)"  // Darker alert indicator
+            break
+          case EnemyState.SUSPICIOUS:
+            enemyColor = "#f59e0b"  // Yellow for suspicious
+            alertColor = "rgba(245, 158, 11, 0.5)"
+            break
+          case EnemyState.DEFEND:
+            enemyColor = "#8b5cf6"  // Purple for defend
+            alertColor = "rgba(139, 92, 246, 0.6)"
+            break
+          case EnemyState.ATTACK:
+            enemyColor = "#dc2626"  // Bright red for attack
+            alertColor = "rgba(220, 38, 38, 0.8)"
+            break
+          default:
+            enemyColor = "#7f1d1d"
+            alertColor = "rgba(239, 68, 68, 0.3)"
+        }
+
         // Body
-        ctx.fillStyle = enemy.alertLevel > 50 ? "#dc2626" : "#7f1d1d"
+        ctx.fillStyle = enemyColor
         ctx.beginPath()
         ctx.arc(enemy.x, enemy.y, ENEMY_SIZE / 2, 0, Math.PI * 2)
         ctx.fill()
 
         // Direction indicator
-        ctx.strokeStyle = "#ef4444"
+        ctx.strokeStyle = "#ffffff"
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(enemy.x, enemy.y)
@@ -416,11 +574,17 @@ export default function PoliceStoriesGame() {
 
         // Alert indicator
         if (enemy.alertLevel > 0) {
-          ctx.fillStyle = `rgba(239, 68, 68, ${enemy.alertLevel / 100})`
+          ctx.fillStyle = `rgba(239, 68, 68, ${enemy.alertLevel / 100 * 0.7})`
           ctx.beginPath()
           ctx.arc(enemy.x, enemy.y, ENEMY_SIZE, 0, Math.PI * 2)
           ctx.fill()
         }
+        
+        // State indicator (small circle above enemy)
+        ctx.fillStyle = enemyColor
+        ctx.beginPath()
+        ctx.arc(enemy.x, enemy.y - ENEMY_SIZE, 4, 0, Math.PI * 2)
+        ctx.fill()
       })
 
       // Draw player
