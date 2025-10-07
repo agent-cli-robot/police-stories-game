@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { useAudioManager } from "@/hooks/useAudioManager"
 
 interface Position {
   x: number
@@ -55,9 +56,18 @@ export default function PoliceStoriesGame() {
   const [gameState, setGameState] = useState<"menu" | "playing" | "gameover" | "victory">("menu")
   const [score, setScore] = useState(0)
   const [wave, setWave] = useState(1)
+  
+  const { playMusic, stopMusic, playSound } = useAudioManager()
 
   const gameLoopRef = useRef<number>()
   const keysRef = useRef<Set<string>>(new Set())
+
+  // Handle game state changes for audio
+  useEffect(() => {
+    if (gameState === "gameover") {
+      stopMusic(); // Stop music when game ends
+    }
+  }, [gameState, stopMusic])
   const mouseRef = useRef<Position>({ x: 0, y: 0 })
   const playerRef = useRef<Player>({
     x: 400,
@@ -175,6 +185,7 @@ export default function PoliceStoriesGame() {
     setScore(0)
     setWave(1)
     initLevel()
+    playMusic() // Start background music when game starts
   }
 
   const shootBullet = (fromPlayer: boolean, x: number, y: number, angle: number) => {
@@ -185,11 +196,16 @@ export default function PoliceStoriesGame() {
       vy: Math.sin(angle) * BULLET_SPEED,
       fromPlayer,
     })
+    
+    // Play shooting sound based on type
+    if (fromPlayer) {
+      playSound('pistol_shot'); // Player shooting
+    } else {
+      playSound('pistol_shot'); // Enemy shooting
+    }
   }
 
   useEffect(() => {
-    if (gameState !== "playing") return
-
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -317,6 +333,7 @@ export default function PoliceStoriesGame() {
           if (dist < PLAYER_SIZE / 2) {
             player.health -= 20
             bullets.splice(i, 1)
+            playSound('player_hit_1'); // Play hit sound
             if (player.health <= 0) {
               setGameState("gameover")
             }
@@ -335,6 +352,7 @@ export default function PoliceStoriesGame() {
               if (enemy.health <= 0) {
                 enemies.splice(j, 1)
                 setScore((s) => s + 100)
+                playSound('power_up_1'); // Play enemy defeated sound
               }
               break
             }
@@ -432,8 +450,10 @@ export default function PoliceStoriesGame() {
       if (gameLoopRef.current) {
         cancelAnimationFrame(gameLoopRef.current)
       }
+      // Stop all audio when unmounting
+      stopMusic();
     }
-  }, [gameState])
+  }, [gameState, playMusic, stopMusic])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
