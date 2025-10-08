@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 interface GameSettings {
   bloodEffects: boolean;
+  screenShake: boolean;
+  vignetteEffect: boolean;
   musicVolume: number;
   soundVolume: number;
   masterVolume: number;
@@ -18,6 +20,8 @@ const GameSettingsContext = createContext<GameSettingsContextType | undefined>(u
 
 const DEFAULT_SETTINGS: GameSettings = {
   bloodEffects: true,
+  screenShake: true,
+  vignetteEffect: true,
   musicVolume: 0.3,
   soundVolume: 0.5,
   masterVolume: 1,

@@ -93,6 +93,11 @@ export default function PoliceStoriesGame() {
   const [bloodParticles, setBloodParticles] = useState<Particle[]>([]);
   const bloodParticlesRef = useRef<Particle[]>([]);
   const frameCountRef = useRef<number>(0);
+  
+  // State for screen effects
+  const [screenShakeOffset, setScreenShakeOffset] = useState({ x: 0, y: 0 });
+  const [vignetteOpacity, setVignetteOpacity] = useState(0);
+  const screenShakeRef = useRef({ active: false, duration: 0, intensity: 0 });
 
   const gameLoopRef = useRef<number>()
   const keysRef = useRef<Set<string>>(new Set())
@@ -504,6 +509,20 @@ export default function PoliceStoriesGame() {
             player.health -= 20
             bullets.splice(i, 1)
             playSound('player_hit_1'); // Play hit sound
+            
+            // Trigger screen shake and vignette effects if enabled
+            if (settings.screenShake) {
+              screenShakeRef.current = { 
+                active: true, 
+                duration: 30, // frames
+                intensity: 10 
+              };
+            }
+            
+            if (settings.vignetteEffect) {
+              setVignetteOpacity(0.7); // Start with high opacity
+            }
+            
             if (player.health <= 0) {
               setGameState("gameover")
             }
@@ -556,6 +575,27 @@ export default function PoliceStoriesGame() {
       frameCountRef.current++;
       if (frameCountRef.current % 5 === 0) { // Update state every 5 frames
         setBloodParticles([...bloodParticlesRef.current]);
+      }
+      
+      // Update screen shake
+      if (screenShakeRef.current.active) {
+        if (screenShakeRef.current.duration > 0) {
+          // Generate random shake offset based on intensity
+          const intensity = screenShakeRef.current.intensity * (screenShakeRef.current.duration / 30); // Decreasing intensity
+          const offsetX = (Math.random() - 0.5) * intensity * 2;
+          const offsetY = (Math.random() - 0.5) * intensity * 2;
+          setScreenShakeOffset({ x: offsetX, y: offsetY });
+          screenShakeRef.current.duration--;
+        } else {
+          screenShakeRef.current.active = false;
+          setScreenShakeOffset({ x: 0, y: 0 });
+        }
+      }
+      
+      // Update vignette effect
+      if (vignetteOpacity > 0) {
+        // Fade out vignette effect over time
+        setVignetteOpacity(prev => Math.max(0, prev - 0.02));
       }
 
       // Render
@@ -756,7 +796,13 @@ export default function PoliceStoriesGame() {
       )}
 
       {gameState === "playing" && (
-        <div className="relative space-y-4">
+        <div 
+          className="relative space-y-4"
+          style={{
+            transform: `translate(${screenShakeOffset.x}px, ${screenShakeOffset.y}px)`,
+            transition: 'transform 0.05s linear'
+          }}
+        >
           <div className="flex gap-4 justify-between font-mono text-sm">
             <Card className="px-4 py-2 bg-card border-border">
               <span className="text-muted-foreground">HEALTH: </span>
@@ -789,6 +835,16 @@ export default function PoliceStoriesGame() {
             cameraX={cameraRef.current.x} 
             cameraY={cameraRef.current.y} 
           />
+          
+          {/* Vignette effect for player hit */}
+          {settings.vignetteEffect && vignetteOpacity > 0 && (
+            <div 
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: `radial-gradient(ellipse at center, transparent 40%, rgba(220, 38, 38, ${vignetteOpacity * 0.6}) 100%)`,
+              }}
+            />
+          )}
         </div>
       )}
 

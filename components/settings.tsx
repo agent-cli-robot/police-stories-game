@@ -133,6 +133,28 @@ export default function Settings({ onBack }: SettingsProps) {
                   onCheckedChange={handleBloodEffectsChange}
                 />
               </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Screen Shake</Label>
+                  <p className="text-xs text-muted-foreground">Screen shakes when player is hit</p>
+                </div>
+                <Switch
+                  checked={settings.screenShake}
+                  onCheckedChange={(checked) => updateSetting('screenShake', checked)}
+                />
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Vignette Effect</Label>
+                  <p className="text-xs text-muted-foreground">Red vignette appears when player is hit</p>
+                </div>
+                <Switch
+                  checked={settings.vignetteEffect}
+                  onCheckedChange={(checked) => updateSetting('vignetteEffect', checked)}
+                />
+              </div>
             </div>
           </TabsContent>
         </Tabs>
