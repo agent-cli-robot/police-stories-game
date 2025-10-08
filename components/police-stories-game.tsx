@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useAudioManager } from "@/hooks/useAudioManager"
+import { useGameSettings } from "@/contexts/GameSettingsContext"
 import Settings from "@/components/settings"
+import { BloodParticles, createBloodParticles, updateBloodParticles } from "@/components/BloodParticles"
 
 // Define enemy states
 enum EnemyState {
@@ -55,6 +57,17 @@ interface Wall {
   height: number
 }
 
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  decay: number;
+  size: number;
+  color: string;
+}
+
 const TILE_SIZE = 32
 const PLAYER_SIZE = 20
 const ENEMY_SIZE = 20
@@ -74,6 +87,12 @@ export default function PoliceStoriesGame() {
   const [wave, setWave] = useState(1)
   
   const { playMusic, stopMusic, playSound } = useAudioManager()
+  const { settings } = useGameSettings()
+  
+  // State for blood particles
+  const [bloodParticles, setBloodParticles] = useState<Particle[]>([]);
+  const bloodParticlesRef = useRef<Particle[]>([]);
+  const frameCountRef = useRef<number>(0);
 
   const gameLoopRef = useRef<number>()
   const keysRef = useRef<Set<string>>(new Set())
@@ -499,6 +518,13 @@ export default function PoliceStoriesGame() {
             const dist = Math.hypot(bullet.x - enemy.x, bullet.y - enemy.y)
             if (dist < ENEMY_SIZE / 2) {
               enemy.health -= 50
+              
+              // Create blood particles if enabled in settings
+              if (settings.bloodEffects) {
+                const newParticles = createBloodParticles(enemy.x, enemy.y, 6);
+                bloodParticlesRef.current = [...bloodParticlesRef.current, ...newParticles];
+              }
+              
               bullets.splice(i, 1)
               if (enemy.health <= 0) {
                 enemies.splice(j, 1)
@@ -522,6 +548,15 @@ export default function PoliceStoriesGame() {
       // Keep camera within world bounds
       cameraRef.current.x = Math.max(0, Math.min(WORLD_WIDTH - 800, cameraRef.current.x))
       cameraRef.current.y = Math.max(0, Math.min(WORLD_HEIGHT - 600, cameraRef.current.y))
+
+      // Update blood particles
+      bloodParticlesRef.current = updateBloodParticles(bloodParticlesRef.current);
+      
+      // Sync ref to state every few frames to avoid excessive re-renders
+      frameCountRef.current++;
+      if (frameCountRef.current % 5 === 0) { // Update state every 5 frames
+        setBloodParticles([...bloodParticlesRef.current]);
+      }
 
       // Render
       ctx.fillStyle = "#1a1a1a"
@@ -721,7 +756,7 @@ export default function PoliceStoriesGame() {
       )}
 
       {gameState === "playing" && (
-        <div className="space-y-4">
+        <div className="relative space-y-4">
           <div className="flex gap-4 justify-between font-mono text-sm">
             <Card className="px-4 py-2 bg-card border-border">
               <span className="text-muted-foreground">HEALTH: </span>
@@ -746,6 +781,13 @@ export default function PoliceStoriesGame() {
             width={800}
             height={600}
             className="border-2 border-border rounded-sm shadow-2xl cursor-crosshair bg-background"
+          />
+          
+          {/* Blood particles overlay */}
+          <BloodParticles 
+            particles={bloodParticlesRef.current} 
+            cameraX={cameraRef.current.x} 
+            cameraY={cameraRef.current.y} 
           />
         </div>
       )}

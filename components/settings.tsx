@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useAudioManager } from '@/hooks/useAudioManager';
+import { useGameSettings } from '@/contexts/GameSettingsContext';
 
 interface SettingsProps {
   onBack: () => void;
@@ -13,26 +16,35 @@ interface SettingsProps {
 
 export default function Settings({ onBack }: SettingsProps) {
   const { setMusicVolume, setSoundVolume, setMasterVolume } = useAudioManager();
-  const [musicVolume, setMusic] = useState<number>(0.3);
-  const [soundVolume, setSound] = useState<number>(0.5);
-  const [masterVolume, setMaster] = useState<number>(1);
+  const { settings, updateSetting } = useGameSettings();
+  
+  const [musicVolume, setMusic] = useState<number>(settings.musicVolume);
+  const [soundVolume, setSound] = useState<number>(settings.soundVolume);
+  const [masterVolume, setMaster] = useState<number>(settings.masterVolume);
 
   const handleMusicVolumeChange = (value: number[]) => {
     const volume = value[0];
     setMusic(volume);
-    // The audio manager handles the actual volume, so we don't need to store it here
+    setMusicVolume(volume);
+    updateSetting('musicVolume', volume);
   };
 
   const handleSoundVolumeChange = (value: number[]) => {
     const volume = value[0];
     setSound(volume);
-    // The audio manager handles the actual volume, so we don't need to store it here
+    setSoundVolume(volume);
+    updateSetting('soundVolume', volume);
   };
 
   const handleMasterVolumeChange = (value: number[]) => {
     const volume = value[0];
     setMaster(volume);
-    // The audio manager handles the actual volume, so we don't need to store it here
+    setMasterVolume(volume);
+    updateSetting('masterVolume', volume);
+  };
+
+  const handleBloodEffectsChange = (checked: boolean) => {
+    updateSetting('bloodEffects', checked);
   };
 
   return (
@@ -44,9 +56,10 @@ export default function Settings({ onBack }: SettingsProps) {
 
       <Card className="p-8 space-y-6 max-w-md w-full bg-card border-border">
         <Tabs defaultValue="controls" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="controls">Controls</TabsTrigger>
             <TabsTrigger value="audio">Audio</TabsTrigger>
+            <TabsTrigger value="visual">Visual</TabsTrigger>
           </TabsList>
           
           <TabsContent value="controls" className="space-y-4">
@@ -102,6 +115,22 @@ export default function Settings({ onBack }: SettingsProps) {
                   max={1}
                   step={0.01}
                   className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                />
+              </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="visual" className="space-y-4">
+            <h3 className="text-xl font-semibold text-center">Visual Settings</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Blood Effects</Label>
+                  <p className="text-xs text-muted-foreground">Show blood particles when enemies are hit</p>
+                </div>
+                <Switch
+                  checked={settings.bloodEffects}
+                  onCheckedChange={handleBloodEffectsChange}
                 />
               </div>
             </div>
