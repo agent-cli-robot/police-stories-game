@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useAudioManager } from "@/hooks/useAudioManager"
+import Settings from "@/components/settings"
 
 // Define enemy states
 enum EnemyState {
@@ -68,7 +69,7 @@ const WORLD_HEIGHT = 2000
 
 export default function PoliceStoriesGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [gameState, setGameState] = useState<"menu" | "playing" | "gameover" | "victory">("menu")
+  const [gameState, setGameState] = useState<"menu" | "playing" | "gameover" | "victory" | "settings">("menu")
   const [score, setScore] = useState(0)
   const [wave, setWave] = useState(1)
   
@@ -677,32 +678,45 @@ export default function PoliceStoriesGame() {
     }
   }, [gameState, playMusic, stopMusic])
 
+  const handleBackToMenu = () => {
+    setGameState("menu");
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
-      <div className="text-center space-y-2">
-        <h1 className="font-mono text-4xl font-bold tracking-tighter text-foreground">POLICE STORIES</h1>
-        <p className="text-muted-foreground font-mono text-sm">TACTICAL TOP-DOWN SHOOTER</p>
-      </div>
+      {gameState === "menu" && (
+        <div className="text-center space-y-2">
+          <h1 className="font-mono text-4xl font-bold tracking-tighter text-foreground">POLICE STORIES</h1>
+          <p className="text-muted-foreground font-mono text-sm">TACTICAL TOP-DOWN SHOOTER</p>
+        </div>
+      )}
 
       {gameState === "menu" && (
         <Card className="p-8 space-y-6 max-w-md bg-card border-border">
           <div className="space-y-4 text-center">
             <h2 className="text-2xl font-bold text-card-foreground">Mission Briefing</h2>
             <div className="space-y-2 text-sm text-muted-foreground font-mono">
-              <p>• WASD to move</p>
-              <p>• Mouse to aim</p>
-              <p>• Click to shoot</p>
               <p>• Eliminate all hostiles</p>
               <p>• Use cover wisely</p>
             </div>
           </div>
-          <Button
-            onClick={startGame}
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-mono"
-            size="lg"
-          >
-            START MISSION
-          </Button>
+          <div className="space-y-3">
+            <Button
+              onClick={startGame}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-mono"
+              size="lg"
+            >
+              START MISSION
+            </Button>
+            <Button
+              onClick={() => setGameState("settings")}
+              variant="outline"
+              className="w-full font-mono border-border"
+              size="lg"
+            >
+              SETTINGS
+            </Button>
+          </div>
         </Card>
       )}
 
@@ -753,6 +767,10 @@ export default function PoliceStoriesGame() {
             RETRY MISSION
           </Button>
         </Card>
+      )}
+
+      {gameState === "settings" && (
+        <Settings onBack={handleBackToMenu} />
       )}
     </div>
   )
