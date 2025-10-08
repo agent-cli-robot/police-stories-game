@@ -62,6 +62,10 @@ const BULLET_SPEED = 8
 const PLAYER_SPEED = 3
 const ENEMY_SPEED = 1.5
 
+// Game world dimensions (larger than visible canvas)
+const WORLD_WIDTH = 2000
+const WORLD_HEIGHT = 2000
+
 export default function PoliceStoriesGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [gameState, setGameState] = useState<"menu" | "playing" | "gameover" | "victory">("menu")
@@ -79,6 +83,9 @@ export default function PoliceStoriesGame() {
       stopMusic(); // Stop music when game ends
     }
   }, [gameState, stopMusic])
+  // Camera state - follows player
+  const cameraRef = useRef<Position>({ x: 0, y: 0 })
+  
   const mouseRef = useRef<Position>({ x: 0, y: 0 })
   const playerRef = useRef<Player>({
     x: 400,
@@ -94,39 +101,46 @@ export default function PoliceStoriesGame() {
 
   // Initialize level
   const initLevel = () => {
-    // Create office-like environment with walls
+    // Create office-like environment with walls in a larger world
     wallsRef.current = [
-      // Outer walls
-      { x: 0, y: 0, width: 800, height: 20 },
-      { x: 0, y: 0, width: 20, height: 600 },
-      { x: 780, y: 0, width: 20, height: 600 },
-      { x: 0, y: 580, width: 800, height: 20 },
+      // Outer walls for the large world
+      { x: 0, y: 0, width: WORLD_WIDTH, height: 20 },
+      { x: 0, y: 0, width: 20, height: WORLD_HEIGHT },
+      { x: WORLD_WIDTH - 20, y: 0, width: 20, height: WORLD_HEIGHT },
+      { x: 0, y: WORLD_HEIGHT - 20, width: WORLD_WIDTH, height: 20 },
 
-      // Interior walls - office layout
+      // Interior walls - office layout in the larger world
       { x: 200, y: 100, width: 20, height: 150 },
       { x: 400, y: 150, width: 20, height: 200 },
       { x: 600, y: 100, width: 20, height: 150 },
       { x: 100, y: 350, width: 200, height: 20 },
       { x: 500, y: 400, width: 200, height: 20 },
       { x: 350, y: 250, width: 100, height: 20 },
+      
+      // Additional walls to make the larger world more interesting
+      { x: 800, y: 200, width: 20, height: 300 },
+      { x: 1000, y: 500, width: 300, height: 20 },
+      { x: 1200, y: 700, width: 20, height: 200 },
+      { x: 1400, y: 300, width: 200, height: 20 },
+      { x: 1600, y: 100, width: 20, height: 400 },
     ]
 
-    // Spawn enemies
+    // Spawn enemies in the larger world
     const enemyCount = 3 + wave * 2
     enemiesRef.current = []
     for (let i = 0; i < enemyCount; i++) {
       let x, y
       do {
-        x = Math.random() * 700 + 50
-        y = Math.random() * 500 + 50
+        x = Math.random() * (WORLD_WIDTH - 100) + 50
+        y = Math.random() * (WORLD_HEIGHT - 100) + 50
       } while (
         Math.hypot(x - playerRef.current.x, y - playerRef.current.y) < 200 ||
         checkWallCollision({ x, y }, ENEMY_SIZE)
       )
 
-      // Random patrol point for enemies
-      const patrolX = Math.random() * 700 + 50
-      const patrolY = Math.random() * 500 + 50
+      // Random patrol point for enemies in the larger world
+      const patrolX = Math.random() * (WORLD_WIDTH - 100) + 50
+      const patrolY = Math.random() * (WORLD_HEIGHT - 100) + 50
 
       enemiesRef.current.push({
         x,
@@ -141,9 +155,10 @@ export default function PoliceStoriesGame() {
       })
     }
 
+    // Start player at center of world initially, but can be changed
     playerRef.current = {
-      x: 100,
-      y: 100,
+      x: WORLD_WIDTH / 2,
+      y: WORLD_HEIGHT / 2,
       angle: 0,
       health: 100,
       maxHealth: 100,
@@ -280,13 +295,15 @@ export default function PoliceStoriesGame() {
         player.y = newY
       }
 
-      // Keep player in bounds
-      player.x = Math.max(PLAYER_SIZE, Math.min(800 - PLAYER_SIZE, player.x))
-      player.y = Math.max(PLAYER_SIZE, Math.min(600 - PLAYER_SIZE, player.y))
+      // Keep player in world bounds
+      player.x = Math.max(PLAYER_SIZE, Math.min(WORLD_WIDTH - PLAYER_SIZE, player.x))
+      player.y = Math.max(PLAYER_SIZE, Math.min(WORLD_HEIGHT - PLAYER_SIZE, player.y))
 
-      // Update player angle to face mouse
-      const dx = mouseRef.current.x - player.x
-      const dy = mouseRef.current.y - player.y
+      // Update player angle to face mouse (convert mouse position to world coordinates for accurate aiming)
+      const worldMouseX = mouseRef.current.x + cameraRef.current.x
+      const worldMouseY = mouseRef.current.y + cameraRef.current.y
+      const dx = worldMouseX - player.x
+      const dy = worldMouseY - player.y
       player.angle = Math.atan2(dy, dx)
 
       // Update enemies
@@ -448,8 +465,8 @@ export default function PoliceStoriesGame() {
         bullet.x += bullet.vx
         bullet.y += bullet.vy
 
-        // Remove if out of bounds
-        if (bullet.x < 0 || bullet.x > 800 || bullet.y < 0 || bullet.y > 600) {
+        // Remove if out of bounds of the world
+        if (bullet.x < 0 || bullet.x > WORLD_WIDTH || bullet.y < 0 || bullet.y > WORLD_HEIGHT) {
           bullets.splice(i, 1)
           continue
         }
@@ -493,13 +510,17 @@ export default function PoliceStoriesGame() {
         }
       }
 
-      // Check victory
-      if (enemies.length === 0 && gameState === "playing") {
-        setWave((w) => w + 1)
-        setTimeout(() => {
-          initLevel()
-        }, 1000)
-      }
+      // Update camera to follow player with smooth movement
+      const targetCameraX = player.x - 400 // 400 is half the canvas width
+      const targetCameraY = player.y - 300 // 300 is half the canvas height
+      
+      // Smooth camera following with lerp (linear interpolation)
+      cameraRef.current.x = cameraRef.current.x + (targetCameraX - cameraRef.current.x) * 0.1
+      cameraRef.current.y = cameraRef.current.y + (targetCameraY - cameraRef.current.y) * 0.1
+      
+      // Keep camera within world bounds
+      cameraRef.current.x = Math.max(0, Math.min(WORLD_WIDTH - 800, cameraRef.current.x))
+      cameraRef.current.y = Math.max(0, Math.min(WORLD_HEIGHT - 600, cameraRef.current.y))
 
       // Render
       ctx.fillStyle = "#1a1a1a"
@@ -508,97 +529,134 @@ export default function PoliceStoriesGame() {
       // Draw floor tiles
       ctx.strokeStyle = "#2a2a2a"
       ctx.lineWidth = 1
-      for (let x = 0; x < 800; x += TILE_SIZE) {
-        for (let y = 0; y < 600; y += TILE_SIZE) {
-          ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE)
+      
+      // Calculate visible tile range based on camera position
+      const startX = Math.floor(cameraRef.current.x / TILE_SIZE) * TILE_SIZE
+      const startY = Math.floor(cameraRef.current.y / TILE_SIZE) * TILE_SIZE
+      const endX = Math.ceil((cameraRef.current.x + 800) / TILE_SIZE) * TILE_SIZE
+      const endY = Math.ceil((cameraRef.current.y + 600) / TILE_SIZE) * TILE_SIZE
+      
+      for (let x = startX; x < endX; x += TILE_SIZE) {
+        for (let y = startY; y < endY; y += TILE_SIZE) {
+          // Only draw tiles within the visible area
+          ctx.strokeRect(x - cameraRef.current.x, y - cameraRef.current.y, TILE_SIZE, TILE_SIZE)
         }
       }
 
-      // Draw walls
+      // Draw walls with camera offset
       ctx.fillStyle = "#3a3a3a"
       ctx.strokeStyle = "#4a4a4a"
       ctx.lineWidth = 2
       wallsRef.current.forEach((wall) => {
-        ctx.fillRect(wall.x, wall.y, wall.width, wall.height)
-        ctx.strokeRect(wall.x, wall.y, wall.width, wall.height)
-      })
-
-      // Draw bullets
-      bullets.forEach((bullet) => {
-        ctx.fillStyle = bullet.fromPlayer ? "#fbbf24" : "#ef4444"
-        ctx.beginPath()
-        ctx.arc(bullet.x, bullet.y, BULLET_SIZE, 0, Math.PI * 2)
-        ctx.fill()
-      })
-
-      // Draw enemies with color based on state
-      enemies.forEach((enemy) => {
-        // Set color based on state
-        let enemyColor: string
-        let alertColor: string
-        switch (enemy.state) {
-          case EnemyState.PATROL:
-            enemyColor = "#7f1d1d"  // Dark red for patrol
-            alertColor = "rgba(127, 29, 29, 0.3)"  // Darker alert indicator
-            break
-          case EnemyState.SUSPICIOUS:
-            enemyColor = "#f59e0b"  // Yellow for suspicious
-            alertColor = "rgba(245, 158, 11, 0.5)"
-            break
-          case EnemyState.DEFEND:
-            enemyColor = "#8b5cf6"  // Purple for defend
-            alertColor = "rgba(139, 92, 246, 0.6)"
-            break
-          case EnemyState.ATTACK:
-            enemyColor = "#dc2626"  // Bright red for attack
-            alertColor = "rgba(220, 38, 38, 0.8)"
-            break
-          default:
-            enemyColor = "#7f1d1d"
-            alertColor = "rgba(239, 68, 68, 0.3)"
+        // Only draw walls that are visible in the camera view
+        if (wall.x + wall.width > cameraRef.current.x && 
+            wall.x < cameraRef.current.x + 800 &&
+            wall.y + wall.height > cameraRef.current.y && 
+            wall.y < cameraRef.current.y + 600) {
+          ctx.fillRect(wall.x - cameraRef.current.x, wall.y - cameraRef.current.y, wall.width, wall.height)
+          ctx.strokeRect(wall.x - cameraRef.current.x, wall.y - cameraRef.current.y, wall.width, wall.height)
         }
+      })
 
-        // Body
-        ctx.fillStyle = enemyColor
-        ctx.beginPath()
-        ctx.arc(enemy.x, enemy.y, ENEMY_SIZE / 2, 0, Math.PI * 2)
-        ctx.fill()
-
-        // Direction indicator
-        ctx.strokeStyle = "#ffffff"
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(enemy.x, enemy.y)
-        ctx.lineTo(enemy.x + Math.cos(enemy.angle) * ENEMY_SIZE, enemy.y + Math.sin(enemy.angle) * ENEMY_SIZE)
-        ctx.stroke()
-
-        // Alert indicator
-        if (enemy.alertLevel > 0) {
-          ctx.fillStyle = `rgba(239, 68, 68, ${enemy.alertLevel / 100 * 0.7})`
+      // Draw bullets with camera offset
+      bullets.forEach((bullet) => {
+        // Only draw bullets that are visible in the camera view
+        if (bullet.x > cameraRef.current.x && 
+            bullet.x < cameraRef.current.x + 800 &&
+            bullet.y > cameraRef.current.y && 
+            bullet.y < cameraRef.current.y + 600) {
+          ctx.fillStyle = bullet.fromPlayer ? "#fbbf24" : "#ef4444"
           ctx.beginPath()
-          ctx.arc(enemy.x, enemy.y, ENEMY_SIZE, 0, Math.PI * 2)
+          ctx.arc(bullet.x - cameraRef.current.x, bullet.y - cameraRef.current.y, BULLET_SIZE, 0, Math.PI * 2)
           ctx.fill()
         }
-        
-        // State indicator (small circle above enemy)
-        ctx.fillStyle = enemyColor
-        ctx.beginPath()
-        ctx.arc(enemy.x, enemy.y - ENEMY_SIZE, 4, 0, Math.PI * 2)
-        ctx.fill()
       })
 
-      // Draw player
+      // Draw enemies with color based on state and camera offset
+      enemies.forEach((enemy) => {
+        // Only draw enemies that are visible in the camera view
+        if (enemy.x > cameraRef.current.x - ENEMY_SIZE && 
+            enemy.x < cameraRef.current.x + 800 + ENEMY_SIZE &&
+            enemy.y > cameraRef.current.y - ENEMY_SIZE && 
+            enemy.y < cameraRef.current.y + 600 + ENEMY_SIZE) {
+          
+          // Set color based on state
+          let enemyColor: string
+          let alertColor: string
+          switch (enemy.state) {
+            case EnemyState.PATROL:
+              enemyColor = "#7f1d1d"  // Dark red for patrol
+              alertColor = "rgba(127, 29, 29, 0.3)"  // Darker alert indicator
+              break
+            case EnemyState.SUSPICIOUS:
+              enemyColor = "#f59e0b"  // Yellow for suspicious
+              alertColor = "rgba(245, 158, 11, 0.5)"
+              break
+            case EnemyState.DEFEND:
+              enemyColor = "#8b5cf6"  // Purple for defend
+              alertColor = "rgba(139, 92, 246, 0.6)"
+              break
+            case EnemyState.ATTACK:
+              enemyColor = "#dc2626"  // Bright red for attack
+              alertColor = "rgba(220, 38, 38, 0.8)"
+              break
+            default:
+              enemyColor = "#7f1d1d"
+              alertColor = "rgba(239, 68, 68, 0.3)"
+          }
+
+          // Body
+          ctx.fillStyle = enemyColor
+          ctx.beginPath()
+          ctx.arc(enemy.x - cameraRef.current.x, enemy.y - cameraRef.current.y, ENEMY_SIZE / 2, 0, Math.PI * 2)
+          ctx.fill()
+
+          // Direction indicator
+          ctx.strokeStyle = "#ffffff"
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(enemy.x - cameraRef.current.x, enemy.y - cameraRef.current.y)
+          ctx.lineTo(
+            enemy.x - cameraRef.current.x + Math.cos(enemy.angle) * ENEMY_SIZE, 
+            enemy.y - cameraRef.current.y + Math.sin(enemy.angle) * ENEMY_SIZE
+          )
+          ctx.stroke()
+
+          // Alert indicator
+          if (enemy.alertLevel > 0) {
+            ctx.fillStyle = `rgba(239, 68, 68, ${enemy.alertLevel / 100 * 0.7})`
+            ctx.beginPath()
+            ctx.arc(enemy.x - cameraRef.current.x, enemy.y - cameraRef.current.y, ENEMY_SIZE, 0, Math.PI * 2)
+            ctx.fill()
+          }
+          
+          // State indicator (small circle above enemy)
+          ctx.fillStyle = enemyColor
+          ctx.beginPath()
+          ctx.arc(
+            enemy.x - cameraRef.current.x, 
+            enemy.y - cameraRef.current.y - ENEMY_SIZE, 
+            4, 0, Math.PI * 2
+          )
+          ctx.fill()
+        }
+      })
+
+      // Draw player with camera offset
       ctx.fillStyle = "#3b82f6"
       ctx.beginPath()
-      ctx.arc(player.x, player.y, PLAYER_SIZE / 2, 0, Math.PI * 2)
+      ctx.arc(player.x - cameraRef.current.x, player.y - cameraRef.current.y, PLAYER_SIZE / 2, 0, Math.PI * 2)
       ctx.fill()
 
       // Player direction
       ctx.strokeStyle = "#60a5fa"
       ctx.lineWidth = 3
       ctx.beginPath()
-      ctx.moveTo(player.x, player.y)
-      ctx.lineTo(player.x + Math.cos(player.angle) * PLAYER_SIZE, player.y + Math.sin(player.angle) * PLAYER_SIZE)
+      ctx.moveTo(player.x - cameraRef.current.x, player.y - cameraRef.current.y)
+      ctx.lineTo(
+        player.x - cameraRef.current.x + Math.cos(player.angle) * PLAYER_SIZE, 
+        player.y - cameraRef.current.y + Math.sin(player.angle) * PLAYER_SIZE
+      )
       ctx.stroke()
 
       gameLoopRef.current = requestAnimationFrame(gameLoop)
